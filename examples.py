@@ -6,8 +6,8 @@ from mpl_toolkits import mplot3d
 import matplotlib.pyplot as plt
 import numpy as np
 
-Nx = 2*2*2*128
-Ny = 2*2*2*128
+Nx = 128
+Ny = 128
 L = 6
 
 tx = np.linspace(-L/2, L/2, Nx)
