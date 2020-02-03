@@ -1,4 +1,5 @@
 import numpy as np
+import pickle
 import pyfftw as pf
 
 
@@ -6,33 +7,22 @@ class Elastic:
     """Deformation of an elastic half-space for a given normal stress
 
     Calculate the deformation of an elastic half-space for a given normal
-    stress distribution using FFT. This is done by numerically calculating
-    the integral of
-        p(x', y')/sqrt((x - x')**2 + (y - y')**2)dx'dy'
-    over the 
-    Boussinesq problem for a given normal stress distribution. due to a given normal
-    stress distribution by numerically solving the Boussinesq problem using
-    the FFT. stress distribution of an
-    elastic half-space using Boussinesq 
-    of an 
-    Perform FFTW planning and calculate the elastic deformation due to given
-    normal stress distribution using half-space approximation. The influence
-    coefficients and their FFT are stored in coefficients{nx}x{ny}.npz (see
-    below for the description of nx and ny).
+    stress distribution using FFT. Perform FFTW planning and generate the
+    influence coefficients. The coefficients are saved to a file and then
+    reloaded as needed.
     Dependencies: numpy, pyfftw
 
     Attributes
     ----------
     nx, ny : int, int
         numbers of points used for the discretisation of stress/deformation
-    scale : float
-        scaling factor for the x direction (default 1.0);
-        the y direction is scaled by ny/nx*scale
+    scale : tuple(float, float)
+        scaling factors for the x and y directions (default (1.0, 1.0));
     path : string
-        path to the coefficients file (default '');
-        set path=None if you do not want to save the coefficients
+        path to the influence coefficients file (default '');
+        set path=None if you do not want to load/save the coefficients
     verbose : bool
-        print when generating influence coefficients (default True)
+        print when generating new influence coefficients (default True)
 
     Methods
     ------
@@ -42,16 +32,17 @@ class Elastic:
 
     def __init__(self, nx: int,
                  ny: int,
-                 scale: 1.0,
+                 scale: (1.0, 1.0),
                  path: str='',
                  verbose: bool=True):
         self.nx = nx
         self.ny = ny
         self.scale = scale
+        ratio = self.scale[0]/self.scale[1]
         self.path = path
         self.verbose = verbose
-        self.x = np.linspace(0, 1, nx)
-        self.y = np.linspace(0, ny/nx, ny)
+        self.x = np.linspace(0, ratio, nx)
+        self.y = np.linspace(0, 1, ny)
         self.dx = self.x[1] - self.x[0]
         self.dy = self.y[1] - self.y[0]
 
@@ -63,22 +54,28 @@ class Elastic:
                             direction='FFTW_BACKWARD')
 
         # load or generate and save the influence coefficients and their FFT
-        self.fftcoefficients = pf.empty_aligned((2*nx, ny+1), 'complex128')
-        self.coefficients = np.zeros((nx, ny))
+        self.fftcoeffs = pf.empty_aligned((2*nx, ny+1), 'complex128')
+        self.coeffs = np.zeros((nx, ny))
         if path is not None:
-            filename = f'{path}coefficients{nx}x{ny}.npz'
+            filename = f'{path}coeffs-{nx}-{ny}.npz'
             try:
-                temp = np.load(filename)
-                self.fftcoefficients[:] = temp['fftcoefficients'][:]
-                self.coefficients[:] = temp['coefficients'][:]
+                temp = np.load(filename, allow_pickle=True)
+                self.fftcoeffs[:] = temp[ratio][0]
+                self.coeffs[:] = temp[ratio][1]
             except IOError:
                 self.__generate()
-                np.savez(filename, fftcoefficients=self.fftcoefficients,
-                         coefficients=self.coefficients)
+                with open(filename, 'wb') as f:
+                    pickle.dump({ratio: (self.fftcoeffs, self.coeffs)}, f)
+            except KeyError:
+                self.__generate()
+                temp[ratio] = (self.fftcoeffs, self.coeffs)
+                with open(filename, 'wb') as f:
+                    pickle.dump(temp, f)
         else:
             self.__generate()
-        self.fftcoefficients *= self.scale
-        self.coefficients *= self.scale
+        self.coeffs[:] *= scale[1]
+        self.fftcoeffs[:] *= scale[1]
+
 
     def __generate(self):
         if self.verbose:
@@ -98,10 +95,10 @@ class Elastic:
                 self.real[-2-jx][jy] = self.real[jx][jy]
                 self.real[jx][-2-jy] = self.real[jx][jy]
                 self.real[-2-jx][-2-jy] = self.real[jx][jy]
-        self.coefficients[:] = self.real[:self.nx, :self.ny]
+        self.coeffs[:] = self.real[:self.nx, :self.ny]
         self.fft.execute()
         self.real[:] = 0.0
-        self.fftcoefficients[:] = self.complex
+        self.fftcoeffs[:] = self.complex
         if self.verbose:
             print('done.\n', flush=True)
 
@@ -109,7 +106,7 @@ class Elastic:
         self.real[:] = 0.0
         self.real[:self.nx, :self.ny] = stress 
         self.fft.execute()
-        self.complex[:] *= self.fftcoefficients
+        self.complex[:] *= self.fftcoeffs
         self.ifft.execute()
         self.real[-1-self.nx:-1, -1-self.ny:-1] /= 2*self.nx*2*self.ny
         return self.real[-1-self.nx:-1, -1-self.ny:-1]

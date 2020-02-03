@@ -6,14 +6,14 @@ from mpl_toolkits import mplot3d
 import matplotlib.pyplot as plt
 import numpy as np
 
-Nx = 256
-Ny = 256
+Nx = 128
+Ny = 128
 L = 4
-scale = L
 path = '/home/tom/work/coefficients/'
 
 tx = np.linspace(-L/2, L/2, Nx)
 ty = np.linspace(-L/2, L/2, Ny)
+scale = (tx[-1] - tx[0], ty[-1] - ty[0])
 (x, y) = np.meshgrid(tx, ty, indexing='ij')
 
 # Hertzian contact
