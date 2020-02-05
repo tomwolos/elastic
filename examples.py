@@ -9,7 +9,7 @@ import numpy as np
 Nx = 128
 Ny = 128
 L = 4
-path = '/home/tom/work/coefficients/'
+path = ''
 
 tx = np.linspace(-L/2, L/2, Nx)
 ty = np.linspace(-L/2, L/2, Ny)

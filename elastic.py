@@ -37,14 +37,8 @@ class Elastic:
                  verbose: bool=True):
         self.nx = nx
         self.ny = ny
-        self.scale = scale
-        ratio = self.scale[0]/self.scale[1]
-        self.path = path
+        self.ratio = scale[0]/scale[1]
         self.verbose = verbose
-        self.x = np.linspace(0, ratio, nx)
-        self.y = np.linspace(0, 1, ny)
-        self.dx = self.x[1] - self.x[0]
-        self.dy = self.y[1] - self.y[0]
 
         # FFTW planning
         self.real = pf.empty_aligned((2*nx, 2*ny), 'float64')
@@ -53,22 +47,22 @@ class Elastic:
         self.ifft = pf.FFTW(self.complex, self.real, axes=(0, 1),
                             direction='FFTW_BACKWARD')
 
-        # load or generate and save the influence coefficients and their FFT
+        # load/generate/save the influence coefficients and their FFT
         self.fftcoeffs = pf.empty_aligned((2*nx, ny+1), 'complex128')
         self.coeffs = np.zeros((nx, ny))
         if path is not None:
             filename = f'{path}coeffs-{nx}-{ny}.npz'
             try:
                 temp = np.load(filename, allow_pickle=True)
-                self.fftcoeffs[:] = temp[ratio][0]
-                self.coeffs[:] = temp[ratio][1]
+                self.fftcoeffs[:] = temp[self.ratio][0]
+                self.coeffs[:] = temp[self.ratio][1]
             except IOError:
                 self.__generate()
                 with open(filename, 'wb') as f:
-                    pickle.dump({ratio: (self.fftcoeffs, self.coeffs)}, f)
+                    pickle.dump({self.ratio: (self.fftcoeffs, self.coeffs)}, f)
             except KeyError:
                 self.__generate()
-                temp[ratio] = (self.fftcoeffs, self.coeffs)
+                temp[self.ratio] = (self.fftcoeffs, self.coeffs)
                 with open(filename, 'wb') as f:
                     pickle.dump(temp, f)
         else:
@@ -76,17 +70,20 @@ class Elastic:
         self.coeffs[:] *= scale[1]
         self.fftcoeffs[:] *= scale[1]
 
-
     def __generate(self):
         if self.verbose:
             print(f'Generating influence coefficients '
                   f'({self.nx} x {self.ny})', flush=True)
+        x = np.linspace(0, self.ratio, self.nx)
+        y = np.linspace(0, 1, self.ny)
+        dx = x[1] - x[0]
+        dy = y[1] - y[0]
         for jx in range(self.nx):
             for jy in range(self.ny):
-                x1 = self.x[jx] - self.x[-1] + self.dx/2
-                x2 = self.x[jx] - self.x[-1] - self.dx/2
-                y1 = self.y[jy] - self.y[-1] + self.dy/2
-                y2 = self.y[jy] - self.y[-1] - self.dy/2
+                x1 = x[jx] - x[-1] + dx/2
+                x2 = x[jx] - x[-1] - dx/2
+                y1 = y[jy] - y[-1] + dy/2
+                y2 = y[jy] - y[-1] - dy/2
                 self.real[jx][jy] = (
                     np.abs(x1)*(np.arcsinh(y1/x1) - np.arcsinh(y2/x1))
                     + np.abs(x2)*(np.arcsinh(y2/x2) - np.arcsinh(y1/x2))
@@ -104,7 +101,7 @@ class Elastic:
 
     def update(self, stress: np.ndarray) -> np.ndarray:
         self.real[:] = 0.0
-        self.real[:self.nx, :self.ny] = stress 
+        self.real[:self.nx, :self.ny] = stress
         self.fft.execute()
         self.complex[:] *= self.fftcoeffs
         self.ifft.execute()
